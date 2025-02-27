@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch.distributions import Normal
 # import torch.optim as optim
 import collections
+# 将梯度置零
 def zero_gradients(x):
     if isinstance(x, torch.Tensor):
         if x.grad is not None:
@@ -14,6 +15,8 @@ def zero_gradients(x):
     elif isinstance(x, collections.abc.Iterable):
         for elem in x:
             zero_gradients(elem)
+            
+# 计算雅可比矩阵
 def compute_jacobian(inputs, output, create_graph=False):
     """
     :param inputs: Batch X Size (e.g. Depth X Width X Height)
@@ -24,8 +27,8 @@ def compute_jacobian(inputs, output, create_graph=False):
 
     num_classes = output.size()[1]
 
-    jacobian = torch.zeros(num_classes, *inputs.size())
-    grad_output = torch.zeros(*output.size())
+    jacobian = torch.zeros(num_classes, *inputs.size())  # Class X Batch X Size
+    grad_output = torch.zeros(*output.size()) # Batch X Classes
     if inputs.is_cuda:
         grad_output = grad_output.cuda()
         jacobian = jacobian.cuda()
@@ -66,9 +69,10 @@ class DetPolicyWrapper(object):
             self.u.zero_()
 
     def get_mode_insertion(self, state):
-
+        #前向滚动预测
         with torch.no_grad():
-            s = torch.FloatTensor(state).unsqueeze(0).to(self.device)
+            s = torch.FloatTensor(state).unsqueeze(0).to(self.device) 
+            # `unsqueeze` 方法用于在指定的维度上扩展张量的维度。具体来说，`unsqueeze(0)` 会在张量的第 0 维（即最外层）添加一个新的维度。
             x = []
             for u in self.u:
                 x.append(s.clone())
@@ -78,7 +82,7 @@ class DetPolicyWrapper(object):
                 s, r = self.model.step(s, u_app)
 
         # compute those derivatives
-        x = torch.cat(x)
+        x = torch.cat(x) # 这里将x中的元素拼接成在一起
         x.requires_grad = True
 
         # self.optim.zero_grad() #unused (commmented out alp 5/10)
@@ -86,10 +90,11 @@ class DetPolicyWrapper(object):
 
         pred_state, pred_rew = self.model.step(x, torch.tanh(self.u+u_p)) # torch.tanh added here (alp 5/10)
 
-        dfdx = compute_jacobian(x, pred_state)
-        dfdu = compute_jacobian(self.u, pred_state)
-        dldx = compute_jacobian(x, pred_rew)
-
+        dfdx = compute_jacobian(x, pred_state) #状态转移函数f相对于状态s的偏导数，注意这里将T个批次的偏导全部计算了
+        dfdu = compute_jacobian(self.u, pred_state) #状态转移函数f相对于动作a的偏导数
+        dldx = compute_jacobian(x, pred_rew) #奖励函数r相对于状态s的偏导数
+        
+        # 计算协变量rho,并返回最优动作和对应的协变量
         with torch.no_grad():
             rho = torch.zeros(1, self.state_dim).to(self.device)
             for t in reversed(range(self.T)):

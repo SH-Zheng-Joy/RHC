@@ -11,6 +11,13 @@ import yaml
 import envs
 
 import torch
+print(torch.cuda.is_available())
+print("Pytorch version：")
+print(torch.__version__)
+print("CUDA Version: ")
+print(torch.version.cuda)
+print("cuDNN version is :")
+print(torch.backends.cudnn.version())
 from sac_lib import SoftActorCritic
 from sac_lib import PolicyNetwork
 from sac_lib import ReplayBuffer
